@@ -12,6 +12,8 @@ import traceback # Import traceback for detailed error printing
 import bz2 # Import bz2 for decompression
 import tempfile # Import tempfile for creating temporary files
 import shutil # Import shutil for rmtree
+from ics import Calendar, Event
+from datetime import datetime, timedelta
 
 def decompress_bz2_grib(bz2_filepath: str, output_dir: str):
     """
@@ -309,10 +311,12 @@ if __name__ == "__main__":
                         help='The latitude of the location')
     parser.add_argument('longitude', type=float,
                         help='The longitude of the location')
+    parser.add_argument('min_gusts_knots', type=float,
+                        help='Your min gusts in knots')
 
     args = parser.parse_args()
 
-    print(f"Attempting to read full wind forecast from base directory {args.base_icon_eu_dir} at Latitude: {args.latitude}, Longitude: {args.longitude}...")
+    print(f"Attempting to read full wind forecast from base directory {args.base_icon_eu_dir} at Latitude: {args.latitude}, Longitude: {args.longitude}, Min Gusts: {args.min_gusts_knots}...")
 
     full_wind_forecast_json_output = get_full_wind_forecast_robust_json(
         args.base_icon_eu_dir,
@@ -328,3 +332,22 @@ if __name__ == "__main__":
     else:
         print("\nCould not retrieve the full wind forecast from the GRIB files.")
 
+    forecast = json.loads(full_wind_forecast_json_output)
+    filtered = [entry for entry in forecast if entry["wind_gusts_knots"] >= args.min_gusts_knots]
+    
+    calendar = Calendar()
+    
+    for i, entry in enumerate(filtered):
+        start = datetime.fromisoformat(entry["date"])
+        end = datetime.fromisoformat(filtered[i + 1]["date"]) if i + 1 < len(filtered) else start + timedelta(hours=1)
+    
+        e = Event()
+        e.name = "Wind: Gust ≥ {:.1f}kt".format(entry["wind_gusts_knots"])
+        e.begin = start
+        e.end = end
+        e.description = f"Gusts: {entry['wind_gusts_knots']}kt\nAvg: {entry['wind_speed_avg_knots']}kt\nDirection: {entry['wind_direction_degrees']}°"
+        calendar.events.add(e)
+    
+    with open("wind_forecast.ics", "w") as f:
+        f.writelines(calendar)
+    print("\nDone MF.")
