@@ -8,6 +8,10 @@ def create_gust_calendar(json_file, gust_threshold_kt):
     Reads wind forecast data from a JSON file, identifies times with wind gusts
     exceeding a threshold, and creates an iCalendar (.ics) file.
 
+    Events are created for each forecast entry exceeding the threshold, with the
+    duration determined by the time difference between that entry's datetime and
+    the next entry's datetime. If it's the last entry, a default 3-hour duration is used.
+
     Always creates a calendar file, which will be empty if no gusts exceed
     the threshold. The output file is always overwritten if it exists.
 
@@ -54,45 +58,68 @@ def create_gust_calendar(json_file, gust_threshold_kt):
     now_utc = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ') # Timestamp for DTSTAMP
 
     if 'forecasts' in data and isinstance(data['forecasts'], list):
-        for forecast in data['forecasts']:
+        forecasts = data['forecasts']
+        num_forecasts = len(forecasts)
+
+        for i in range(num_forecasts):
+            forecast = forecasts[i]
             try:
                 # Check if wind gust exceeds the threshold
                 gust = forecast.get('wind_gust_kt', 0) # Use .get() with default for safety
                 if gust > gust_threshold_kt:
                     events_added += 1
-                    # Parse the datetime string
-                    # Assuming the datetime is in 'YYYY-MM-DD HH:MM:SS' format
-                    dt_obj = datetime.datetime.strptime(forecast['datetime'], '%Y-%m-%d %H:%M:%S')
+                    
+                    # Parse the current forecast datetime string
+                    # Assuming the datetime is in 'YYYY-MM-DD HH:MM:SS' format and is in UTC
+                    dt_obj_start = datetime.datetime.strptime(forecast['datetime'], '%Y-%m-%d %H:%M:%S')
 
-                    # iCalendar uses YYYYMMDDTHHMMSS format
-                    # For simplicity here, we'll treat the JSON times as local
-                    # and not add 'Z' for UTC or specify a TZID.
-                    # A calendar client will typically interpret this as floating time
-                    # or according to local system settings.
-                    dt_start_str = dt_obj.strftime('%Y%m%dT%H%M%S')
+                    # Determine the end time based on the next entry's start time
+                    if i + 1 < num_forecasts:
+                        # Get the start time of the next entry
+                        next_forecast = forecasts[i+1]
+                        try:
+                             dt_obj_end = datetime.datetime.strptime(next_forecast['datetime'], '%Y-%m-%d %H:%M:%S')
+                             # The duration is the difference between the next entry's start and the current entry's start
+                             # Note: This makes the event end exactly when the next one starts.
+                             # If preferred, you could set end to dt_obj_start + calculated duration,
+                             # but using the next start time directly is usually more precise for time blocks.
+                             # Duration is implicitly defined by DTSTART and DTEND.
 
-                    # Create a simple 1-hour event
-                    dt_end_obj = dt_obj + datetime.timedelta(hours=1)
-                    dt_end_str = dt_end_obj.strftime('%Y%m%dT%H%M%S')
+                        except ValueError:
+                            print(f"Warning: Could not parse datetime string for the next forecast entry (index {i+1}). Falling back to 1-hour duration for current entry (index {i}).")
+                            # Fallback to 1 hour if the next datetime is unparseable
+                            dt_obj_end = dt_obj_start + datetime.timedelta(hours=1)
+                        except KeyError:
+                             print(f"Warning: Missing 'datetime' key in the next forecast entry (index {i+1}). Falling back to 1-hour duration for current entry (index {i}).")
+                             # Fallback to 1 hour if the next datetime key is missing
+                             dt_obj_end = dt_obj_start + datetime.timedelta(hours=1)
 
+                    else:
+                        # This is the last entry, use a default last duration (3 hours)
+                        dt_obj_end = dt_obj_start + datetime.timedelta(hours=3)
+
+                    dt_start_str = dt_obj_start.strftime('%Y%m%dT%H%M%SZ')  # <-- 'Z' means UTC
+                    dt_end_str = dt_obj_end.strftime('%Y%m%dT%H%M%SZ')      # <-- 'Z' means UTC
+                    
                     # Generate a simple unique identifier for the event
                     # Combine datetime, gust value, and location for uniqueness
-                    uid = f"{dt_obj.strftime('%Y%m%dT%H%M%S')}-{int(gust)}-{latitude:.3f}-{longitude:.3f}@gustcalendar.local"
+                    # Use the start time of the event for the UID base
+                    uid = f"{dt_obj_start.strftime('%Y%m%dT%H%M%S')}-{int(gust)}-{latitude:.3f}-{longitude:.3f}@gustcalendar.local"
 
                     ical_content.append("BEGIN:VEVENT")
                     ical_content.append(f"UID:{uid}")
-                    ical_content.append(f"DTSTAMP:{now_utc}") # When this event definition was created
+                    ical_content.append(f"DTSTAMP:{now_utc}")
                     ical_content.append(f"DTSTART:{dt_start_str}")
                     ical_content.append(f"DTEND:{dt_end_str}")
                     ical_content.append(f"SUMMARY:Gust over {gust_threshold_kt} kt ({gust:.1f} kt)")
                     ical_content.append("END:VEVENT")
 
             except ValueError:
-                 print(f"Warning: Could not parse datetime string in forecast: {forecast.get('datetime')}")
+                 print(f"Warning: Could not parse datetime string in forecast entry {i}: {forecast.get('datetime')}. Skipping this entry.")
             except KeyError as e:
-                 print(f"Warning: Missing expected key in a forecast entry: {e}. Entry: {forecast}")
+                 print(f"Warning: Missing expected key {e} in forecast entry {i}. Skipping this entry. Entry: {forecast}")
             except Exception as e:
-                 print(f"An unexpected error occurred processing a forecast entry: {e}. Entry: {forecast}")
+                 print(f"An unexpected error occurred processing forecast entry {i}: {e}. Skipping this entry. Entry: {forecast}")
 
     else:
         print("Warning: JSON structure missing 'forecasts' list or it's not a list.")
