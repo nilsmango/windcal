@@ -1,5 +1,4 @@
 import xarray as xr
-import cfgrib
 import numpy as np
 import math
 from datetime import datetime, timedelta
@@ -13,7 +12,6 @@ import bz2 # Import bz2 for decompression
 import tempfile # Import tempfile for creating temporary files
 import shutil # Import shutil for rmtree
 from ics import Calendar, Event
-from datetime import datetime, timedelta
 
 def decompress_bz2_grib(bz2_filepath: str, output_dir: str):
     """
@@ -332,7 +330,11 @@ if __name__ == "__main__":
     else:
         print("\nCould not retrieve the full wind forecast from the GRIB files.")
 
-    forecast = json.loads(full_wind_forecast_json_output)
+    if full_wind_forecast_json_output is not None:
+        forecast = json.loads(full_wind_forecast_json_output)
+    else:
+        # Handle the case where full_wind_forecast_json_output is None
+        forecast = {}
     filtered = [entry for entry in forecast if entry["wind_gusts_knots"] >= args.min_gusts_knots]
     
     calendar = Calendar()
@@ -349,5 +351,5 @@ if __name__ == "__main__":
         calendar.events.add(e)
     
     with open("wind_forecast.ics", "w") as f:
-        f.writelines(calendar)
+        f.writelines(str(calendar))
     print("\nDone MF.")

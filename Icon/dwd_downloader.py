@@ -4,7 +4,6 @@ import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
 import concurrent.futures
-import pathlib
 
 def get_timestamp_directories(url):
     """Fetch all directories with timestamps from the main page."""
