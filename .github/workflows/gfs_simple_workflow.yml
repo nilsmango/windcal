@@ -1,0 +1,61 @@
+name: Update Wind Data and Calendar
+
+on:
+  schedule:
+    # Run twice a day, e.g., at 05:00 and 17:00 UTC
+    # Adjust times based on GFS availability and your needs
+    - cron: '0 5,17 * * *'
+  # Optional: Add workflow_dispatch to run manually from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  run_update_process:
+    runs-on: ubuntu-latest # Or a different runner if needed
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11' # Use your desired Python version
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          # Install eccodes for cfgrib - specific to GRIB2 data
+          sudo apt-get update
+          sudo apt-get install -y libeccodes-dev
+          pip install cfgrib
+
+      - name: Create data directory
+        run: mkdir gfs_wind_data # Matches the output_directory in your script
+
+      - name: Run Download Script
+        run: python gfs_downloader.py
+
+      - name: Run Analyzer Script
+        run: python gfs_analyzer.py
+
+      - name: Run Calendar Script
+        # Replace create_calendar.py and wind_data.json with your actual script/files
+        # Replace calendar.html with your desired final output file name
+        run: python create_calendar.py forecast_combined.json 7
+
+      - name: Upload Calendar File via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.1
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: /path/to/your/webserver/directory/ # Directory where the file should go
+          state-name: .ftp-deploy-sync-state.json # Keep track of deployed files
+          local-dir: ./ # Deploy from the current directory
+          # Only upload the final calendar file. TODO: need to change the file name one day
+          exclude: |
+            **/*
+            !lat47.128lon7.229kn7.ics
+        env:
+          CI: true
