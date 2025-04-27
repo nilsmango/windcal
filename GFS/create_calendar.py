@@ -8,6 +8,9 @@ def create_gust_calendar(json_file, gust_threshold_kt):
     Reads wind forecast data from a JSON file, identifies times with wind gusts
     exceeding a threshold, and creates an iCalendar (.ics) file.
 
+    Always creates a calendar file, which will be empty if no gusts exceed
+    the threshold. The output file is always overwritten if it exists.
+
     Args:
         json_file (str): The path to the input JSON file.
         gust_threshold_kt (float or int): The wind gust threshold in knots.
@@ -47,7 +50,7 @@ def create_gust_calendar(json_file, gust_threshold_kt):
     ical_content.append("PRODID:-//project7III//WindCal//EN")
     ical_content.append("CALSCALE:GREGORIAN") # Or FLOATING for times without Z/TZID
 
-    events_found = False
+    events_added = 0 # Counter to track how many events were added
     now_utc = datetime.datetime.utcnow().strftime('%Y%m%dT%H%M%SZ') # Timestamp for DTSTAMP
 
     if 'forecasts' in data and isinstance(data['forecasts'], list):
@@ -56,7 +59,7 @@ def create_gust_calendar(json_file, gust_threshold_kt):
                 # Check if wind gust exceeds the threshold
                 gust = forecast.get('wind_gust_kt', 0) # Use .get() with default for safety
                 if gust > gust_threshold_kt:
-                    events_found = True
+                    events_added += 1
                     # Parse the datetime string
                     # Assuming the datetime is in 'YYYY-MM-DD HH:MM:SS' format
                     dt_obj = datetime.datetime.strptime(forecast['datetime'], '%Y-%m-%d %H:%M:%S')
@@ -94,21 +97,21 @@ def create_gust_calendar(json_file, gust_threshold_kt):
     else:
         print("Warning: JSON structure missing 'forecasts' list or it's not a list.")
 
+    if events_added == 0:
+        print(f"No wind gusts over {gust_threshold_kt} knots found in the data. An empty calendar will be created.")
+    else:
+        print(f"Found {events_added} times with gusts over {gust_threshold_kt} knots.")
 
-    if not events_found:
-        print(f"No wind gusts over {gust_threshold_kt} knots found in the data.")
-        # You might choose to not create the file in this case,
-        # or create an empty calendar file.
-        # Let's choose to not create the file if no events are found.
-        return None
 
     ical_content.append("END:VCALENDAR")
 
     # Write the calendar to the file
+    # Using 'w' mode ensures the file is created if it doesn't exist
+    # and overwritten if it does exist.
     try:
         with open(filename, 'w') as f:
             f.write('\n'.join(ical_content))
-        print(f"Successfully created iCalendar file: {filename}")
+        print(f"Successfully created/overwritten iCalendar file: {filename}")
         return filename
     except IOError as e:
         print(f"Error: Could not write calendar file {filename}: {e}")
