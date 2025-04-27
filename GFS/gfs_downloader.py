@@ -1,6 +1,8 @@
+
 import requests
 import os
 import time
+import glob
 from datetime import datetime, timedelta
 
 def get_latest_gfs_cycle():
@@ -35,7 +37,40 @@ def get_latest_gfs_cycle():
     
     raise Exception("Could not find an available GFS cycle")
 
-def download_gfs_wind_data(output_dir=None, max_retries=3, retry_delay=30):
+def clean_output_directory(output_dir, current_date_str=None, current_cycle=None):
+    """Remove old GFS data files from the output directory."""
+    if not os.path.exists(output_dir):
+        return
+        
+    # If we have current date and cycle information, only delete older files
+    if current_date_str and current_cycle:
+        print(f"Cleaning up old files (keeping {current_date_str}_{current_cycle} files)...")
+        pattern = os.path.join(output_dir, "gfs_*.grib2")
+        current_prefix = f"gfs_{current_date_str}_{current_cycle}_"
+        
+        for file_path in glob.glob(pattern):
+            file_name = os.path.basename(file_path)
+            # Keep files from the current run
+            if file_name.startswith(current_prefix):
+                continue
+            # Delete older files
+            try:
+                os.remove(file_path)
+                print(f"Deleted old file: {file_name}")
+            except OSError as e:
+                print(f"Error deleting {file_name}: {e}")
+    else:
+        # If no current run info provided, delete all files
+        print("Cleaning up all existing files in the output directory...")
+        pattern = os.path.join(output_dir, "gfs_*.grib2")
+        for file_path in glob.glob(pattern):
+            try:
+                os.remove(file_path)
+                print(f"Deleted: {os.path.basename(file_path)}")
+            except OSError as e:
+                print(f"Error deleting {os.path.basename(file_path)}: {e}")
+
+def download_gfs_wind_data(output_dir=None, max_retries=3, retry_delay=30, clean_old_files=True):
     """Download the latest available GFS wind data."""
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
@@ -45,6 +80,10 @@ def download_gfs_wind_data(output_dir=None, max_retries=3, retry_delay=30):
     # Find latest available run
     date_str, cycle = get_latest_gfs_cycle()
     print(f"Found latest GFS run: {date_str} cycle {cycle}Z")
+    
+    # Clean up old files if requested
+    if clean_old_files:
+        clean_output_directory(output_dir, date_str, cycle)
     
     # For wind data, we typically want forecasts up to 5 days (120 hours)
     # but let's try to get as many steps as available (up to 384 hours/16 days for 0.25° data)
@@ -129,5 +168,7 @@ def download_gfs_wind_data(output_dir=None, max_retries=3, retry_delay=30):
 
 if __name__ == "__main__":
     output_directory = "gfs_wind_data"  # Change this if you want
-    files = download_gfs_wind_data(output_directory)
+    
+    # Set clean_old_files=True to remove old files (default is True)
+    files = download_gfs_wind_data(output_directory, clean_old_files=True)
     print(f"Downloaded {len(files)} GFS forecast files")
