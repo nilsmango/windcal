@@ -51,7 +51,7 @@ jobs:
           server-dir: /project7iii.com/public_html/foildata/
           state-name: .ftp-deploy-sync-state.json
           local-dir: ./ 
-          ftp-ssl: true
+          protocol: ftps
           # Only upload the final calendar file. TODO: need to change the file name one day
           exclude: |
             **/*
