@@ -1,7 +1,6 @@
 import json
 import datetime
 import sys
-import os
 
 def create_gust_calendar(json_file, gust_threshold_kt):
     """
