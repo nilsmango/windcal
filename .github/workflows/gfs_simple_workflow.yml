@@ -4,7 +4,7 @@ on:
   schedule:
     # Run twice a day, e.g., at 05:00 and 17:00 UTC
     # Adjust times based on GFS availability and your needs
-    - cron: '0 5,17 * * *'
+    - cron: '0 5,11,17,23 * * *'
   # Optional: Add workflow_dispatch to run manually from GitHub Actions tab
   workflow_dispatch:
 
@@ -43,7 +43,7 @@ jobs:
         run: python scripts/gfs_analyzer.py
 
       - name: Run Calendar Script
-        run: python scripts/create_calendar.py forecast_combined.json 7
+        run: python scripts/create_calendar.py forecast_combined.json 10
       
       - name: Create temporary upload directory
         run: mkdir ./upload_temp
