@@ -40,7 +40,7 @@ jobs:
         run: python scripts/gfs_analyzer.py
 
       - name: Run Calendar Script
-        run: python scripts/create_calendar.py forecast_combined.json 10
+        run: python scripts/create_calendar.py forecast_combined.json 7
       
       - name: Create temporary upload directory
         run: mkdir ./upload_temp
