@@ -46,7 +46,7 @@ jobs:
         run: python scripts/create_calendar.py forecast_combined.json 7
 
       - name: Upload Calendar File via SFTP (using dedicated SFTP Action)
-        uses: wangyucode/sftp-deploy@v2.0.0
+        uses: wangyucode/sftp-deploy@v2
         with:
           host: ${{ secrets.FTP_SERVER }}
           port: 5544
