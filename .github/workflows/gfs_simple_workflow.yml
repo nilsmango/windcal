@@ -54,7 +54,7 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           localDir: './'
           remoteDir: '/project7iii.com/public_html/foildata/'
-          include: '*.ics'
+          exclude: '**/*, !lat47.128lon7.229kn7.ics'
           
         env:
           CI: true
