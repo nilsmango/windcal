@@ -3,3 +3,5 @@ cfgrib
 numpy
 pandas
 xarray
+pytz
+timezonefinder
