@@ -193,7 +193,7 @@ def create_gust_calendar(json_file, gust_threshold_kt):
                     ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
                     ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
                     ical_content.append(f"SUMMARY:Gusts ≥ {int(gust_threshold_kt)}kt | Max: {max_gust:.1f}kt")
-                    # ical_content.append(f"LOCATION:{latitude:.3f},{longitude:.3f}") # should one day be real place
+                    ical_content.append(f"GEO:{latitude:.3f};{longitude:.3f}")
                     ical_content.append(f"DESCRIPTION:{description}")
                     ical_content.append("END:VEVENT")
 
