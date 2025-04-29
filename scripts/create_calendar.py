@@ -162,6 +162,11 @@ def create_gust_calendar(json_file, gust_threshold_kt):
                     events_added_count += 1
                     start_dt_obj_utc = datetime.datetime.strptime(current_block[0]['datetime'], '%Y-%m-%d %H:%M:%S')
                     end_dt_obj_utc = datetime.datetime.strptime(current_block[-1]['datetime'], '%Y-%m-%d %H:%M:%S') + interval
+                    
+                    # Calculate max gust for the block
+                    gusts_in_block = [entry.get('wind_gust_kt') for entry in current_block if entry.get('wind_gust_kt') is not None]
+                    max_gust = max(gusts_in_block) if gusts_in_block else 0.0
+                    
                     # Build description etc. (same as end-of-loop logic)
                     description_lines = []
                     for block_entry in current_block:
@@ -187,8 +192,8 @@ def create_gust_calendar(json_file, gust_threshold_kt):
                     ical_content.append(f"DTSTAMP:{now_utc}")
                     ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
                     ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    ical_content.append(f"SUMMARY:Gusts > {int(gust_threshold_kt)} kt")
-                    ical_content.append(f"LOCATION:{latitude:.3f},{longitude:.3f}")
+                    ical_content.append(f"SUMMARY:Gusts ≥ {int(gust_threshold_kt)}kt | Max: {max_gust:.1f}kt")
+                    # ical_content.append(f"LOCATION:{latitude:.3f},{longitude:.3f}") # should one day be real place
                     ical_content.append(f"DESCRIPTION:{description}")
                     ical_content.append("END:VEVENT")
 
@@ -234,7 +239,7 @@ def create_gust_calendar(json_file, gust_threshold_kt):
                     ical_content.append(f"DTSTAMP:{now_utc}")
                     ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
                     ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    ical_content.append(f"SUMMARY:Gusts > {int(gust_threshold_kt)} kt (UTC: {start_dt_obj_utc.strftime('%H:%M')} - {end_dt_obj_utc.strftime('%H:%M')})") # Explicitly state UTC
+                    ical_content.append(f"SUMMARY:Gusts > {int(gust_threshold_kt)} kt")
                     ical_content.append(f"LOCATION:{latitude:.3f},{longitude:.3f}")
                     ical_content.append(f"DESCRIPTION:{description}")
                     ical_content.append("END:VEVENT")
