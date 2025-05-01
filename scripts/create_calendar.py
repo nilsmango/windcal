@@ -42,6 +42,47 @@ def format_ical_description_line(local_dt_obj, speed_kt, gust_kt, direction_deg)
 
     return line
 
+def create_event_for_block(ical_content, current_block, start_dt_obj_utc, end_dt_obj_utc, 
+                          latitude, longitude, gust_threshold_kt, local_tz, now_utc):
+    """
+    Creates a calendar event for a continuous block of high wind gusts.
+    Extracts this common functionality to avoid code duplication.
+    """
+    # Calculate max gust for the block
+    gusts_in_block = [entry.get('wind_gust_kt') for entry in current_block if entry.get('wind_gust_kt') is not None]
+    max_gust = max(gusts_in_block) if gusts_in_block else 0.0
+    
+    # Build the description
+    description_lines = []
+    for block_entry in current_block:
+        # Convert UTC time for description line
+        block_entry_utc_naive = datetime.datetime.strptime(block_entry['datetime'], '%Y-%m-%d %H:%M:%S')
+        block_entry_utc_aware = pytz.utc.localize(block_entry_utc_naive)
+        block_entry_local = block_entry_utc_aware.astimezone(local_tz)
+
+        desc_line = format_ical_description_line(
+            block_entry_local, # Pass the local datetime object
+            block_entry.get('wind_speed_kt', 0),
+            block_entry.get('wind_gust_kt'),
+            block_entry.get('wind_dir_deg')
+        )
+        description_lines.append(desc_line)
+
+    description = "\\n".join(description_lines)
+
+    # Generate UID based on block start time and location
+    uid = f"{start_dt_obj_utc.strftime('%Y%m%dT%H%M%S')}-{latitude:.3f}-{longitude:.3f}@gustcalendar.local"
+
+    ical_content.append("BEGIN:VEVENT")
+    ical_content.append(f"UID:{uid}")
+    ical_content.append(f"DTSTAMP:{now_utc}")
+    ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
+    ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
+    # Consistently include both threshold and max gust in the summary
+    ical_content.append(f"SUMMARY:Gusts ≥ {int(gust_threshold_kt)}kt | Max: {max_gust:.1f}kt")
+    ical_content.append(f"GEO:{latitude:.3f};{longitude:.3f}")
+    ical_content.append(f"DESCRIPTION:{description}")
+    ical_content.append("END:VEVENT")
 
 def create_gust_calendar(json_file, gust_threshold_kt):
     """
@@ -140,7 +181,6 @@ def create_gust_calendar(json_file, gust_threshold_kt):
                  print(f"Warning: Could not calculate interval from first two forecasts ({e}). Defaulting to 1 hour.")
                  interval = datetime.timedelta(hours=1)
 
-
         current_block = []
 
         # Iterate through forecasts to find continuous blocks
@@ -152,101 +192,39 @@ def create_gust_calendar(json_file, gust_threshold_kt):
             direction = forecast.get('wind_dir_deg')
             forecast_utc_str = forecast.get('datetime')
 
-
             # Validate essential data for the entry
             if forecast_utc_str is None:
                 print(f"Warning: Skipping forecast entry {i} due to missing 'datetime'.")
                 # If current_block is not empty, process it as it ended unexpectedly
                 if current_block:
-                     # Process the completed block (ends at the time of the last valid entry + interval)
-                    events_added_count += 1
+                    # Process the completed block (ends at the time of the last valid entry + interval)
                     start_dt_obj_utc = datetime.datetime.strptime(current_block[0]['datetime'], '%Y-%m-%d %H:%M:%S')
                     end_dt_obj_utc = datetime.datetime.strptime(current_block[-1]['datetime'], '%Y-%m-%d %H:%M:%S') + interval
                     
-                    # Calculate max gust for the block
-                    gusts_in_block = [entry.get('wind_gust_kt') for entry in current_block if entry.get('wind_gust_kt') is not None]
-                    max_gust = max(gusts_in_block) if gusts_in_block else 0.0
-                    
-                    # Build description etc. (same as end-of-loop logic)
-                    description_lines = []
-                    for block_entry in current_block:
-                         # Convert UTC time for description line
-                         block_entry_utc_naive = datetime.datetime.strptime(block_entry['datetime'], '%Y-%m-%d %H:%M:%S')
-                         block_entry_utc_aware = pytz.utc.localize(block_entry_utc_naive)
-                         block_entry_local = block_entry_utc_aware.astimezone(local_tz)
-
-                         desc_line = format_ical_description_line(
-                             block_entry_local,
-                             block_entry.get('wind_speed_kt', 0),
-                             block_entry.get('wind_gust_kt'),
-                             block_entry.get('wind_dir_deg')
-                         )
-                         description_lines.append(desc_line)
-
-                    description = "\\n".join(description_lines)
-
-                    uid = f"{start_dt_obj_utc.strftime('%Y%m%dT%H%M%S')}-{latitude:.3f}-{longitude:.3f}@gustcalendar.local"
-
-                    ical_content.append("BEGIN:VEVENT")
-                    ical_content.append(f"UID:{uid}")
-                    ical_content.append(f"DTSTAMP:{now_utc}")
-                    ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    ical_content.append(f"SUMMARY:Gusts ≥ {int(gust_threshold_kt)}kt | Max: {max_gust:.1f}kt")
-                    ical_content.append(f"GEO:{latitude:.3f};{longitude:.3f}")
-                    ical_content.append(f"DESCRIPTION:{description}")
-                    ical_content.append("END:VEVENT")
-
+                    create_event_for_block(ical_content, current_block, start_dt_obj_utc, end_dt_obj_utc,
+                                          latitude, longitude, gust_threshold_kt, local_tz, now_utc)
+                    events_added_count += 1
                     current_block = [] # Clear the block
                 continue # Skip to the next forecast entry
 
             # Now we know forecast_utc_str is valid
             try:
-                 forecast_dt_utc_naive = datetime.datetime.strptime(forecast_utc_str, '%Y-%m-%d %H:%M:%S')
-                 # Make the datetime UTC-aware for conversion
-                 forecast_dt_utc_aware = pytz.utc.localize(forecast_dt_utc_naive)
+                forecast_dt_utc_naive = datetime.datetime.strptime(forecast_utc_str, '%Y-%m-%d %H:%M:%S')
+                # Make the datetime UTC-aware for conversion
+                forecast_dt_utc_aware = pytz.utc.localize(forecast_dt_utc_naive)
             except ValueError:
-                 print(f"Warning: Could not parse datetime string '{forecast_utc_str}' in forecast entry {i}. Skipping this entry.")
-                 # If current_block is not empty, process it as it ended unexpectedly
-                 if current_block:
-                     # Process the completed block (ends at the time of the last valid entry + interval)
-                    events_added_count += 1
+                print(f"Warning: Could not parse datetime string '{forecast_utc_str}' in forecast entry {i}. Skipping this entry.")
+                # If current_block is not empty, process it as it ended unexpectedly
+                if current_block:
+                    # Process the completed block (ends at the time of the last valid entry + interval)
                     start_dt_obj_utc = datetime.datetime.strptime(current_block[0]['datetime'], '%Y-%m-%d %H:%M:%S')
                     end_dt_obj_utc = datetime.datetime.strptime(current_block[-1]['datetime'], '%Y-%m-%d %H:%M:%S') + interval
 
-                    # Build description etc.
-                    description_lines = []
-                    for block_entry in current_block:
-                         # Convert UTC time for description line
-                         block_entry_utc_naive = datetime.datetime.strptime(block_entry['datetime'], '%Y-%m-%d %H:%M:%S')
-                         block_entry_utc_aware = pytz.utc.localize(block_entry_utc_naive)
-                         block_entry_local = block_entry_utc_aware.astimezone(local_tz)
-
-                         desc_line = format_ical_description_line(
-                             block_entry_local,
-                             block_entry.get('wind_speed_kt', 0),
-                             block_entry.get('wind_gust_kt'),
-                             block_entry.get('wind_dir_deg')
-                         )
-                         description_lines.append(desc_line)
-
-                    description = "\\n".join(description_lines)
-
-                    uid = f"{start_dt_obj_utc.strftime('%Y%m%dT%H%M%S')}-{latitude:.3f}-{longitude:.3f}@gustcalendar.local"
-
-                    ical_content.append("BEGIN:VEVENT")
-                    ical_content.append(f"UID:{uid}")
-                    ical_content.append(f"DTSTAMP:{now_utc}")
-                    ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    ical_content.append(f"SUMMARY:Gusts > {int(gust_threshold_kt)} kt")
-                    ical_content.append(f"LOCATION:{latitude:.3f},{longitude:.3f}")
-                    ical_content.append(f"DESCRIPTION:{description}")
-                    ical_content.append("END:VEVENT")
-
+                    create_event_for_block(ical_content, current_block, start_dt_obj_utc, end_dt_obj_utc,
+                                          latitude, longitude, gust_threshold_kt, local_tz, now_utc)
+                    events_added_count += 1
                     current_block = [] # Clear the block
-                 continue # Skip to the next forecast entry
-
+                continue # Skip to the next forecast entry
 
             is_over_threshold = gust > gust_threshold_kt # Already defaulted gust to 0 if None
 
@@ -256,100 +234,35 @@ def create_gust_calendar(json_file, gust_threshold_kt):
             else:
                 # If we were in a block, process it now that it's ended
                 if current_block:
-                    events_added_count += 1
                     # Process the completed block
                     start_dt_obj_utc = datetime.datetime.strptime(current_block[0]['datetime'], '%Y-%m-%d %H:%M:%S')
                     # The block ends when the forecast entry *after* the last block entry starts
                     # This 'next_forecast_time' is the time of the entry at index 'i' (the one below threshold)
                     end_dt_obj_utc = datetime.datetime.strptime(forecasts[i]['datetime'], '%Y-%m-%d %H:%M:%S')
 
-
-                    # Build the description
-                    description_lines = []
-                    for block_entry in current_block:
-                         # Convert UTC time for description line
-                         block_entry_utc_naive = datetime.datetime.strptime(block_entry['datetime'], '%Y-%m-%d %H:%M:%S')
-                         block_entry_utc_aware = pytz.utc.localize(block_entry_utc_naive)
-                         block_entry_local = block_entry_utc_aware.astimezone(local_tz)
-
-                         desc_line = format_ical_description_line(
-                             block_entry_local, # Pass the local datetime object
-                             block_entry.get('wind_speed_kt', 0),
-                             block_entry.get('wind_gust_kt'),
-                             block_entry.get('wind_dir_deg')
-                         )
-                         description_lines.append(desc_line)
-
-                    description = "\\n".join(description_lines)
-
-                    # Generate UID based on block start time and location
-                    uid = f"{start_dt_obj_utc.strftime('%Y%m%dT%H%M%S')}-{latitude:.3f}-{longitude:.3f}@gustcalendar.local"
-
-
-                    ical_content.append("BEGIN:VEVENT")
-                    ical_content.append(f"UID:{uid}")
-                    ical_content.append(f"DTSTAMP:{now_utc}")
-                    ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-                    # Explicitly state UTC in the summary time range
-                    ical_content.append(f"SUMMARY:Gusts > {int(gust_threshold_kt)} kt (UTC: {start_dt_obj_utc.strftime('%H:%M')} - {end_dt_obj_utc.strftime('%H:%M')})")
-                    # Add LOCATION property with lat/lon
-                    ical_content.append(f"LOCATION:{latitude:.3f},{longitude:.3f}")
-                    ical_content.append(f"DESCRIPTION:{description}")
-                    ical_content.append("END:VEVENT")
-
+                    create_event_for_block(ical_content, current_block, start_dt_obj_utc, end_dt_obj_utc,
+                                          latitude, longitude, gust_threshold_kt, local_tz, now_utc)
+                    events_added_count += 1
                     # Clear the block for the next potential one
                     current_block = []
                 # Else: current_block was empty and current entry is below threshold, do nothing.
 
         # After the loop, check if there's a pending block at the very end of the forecasts
         if current_block:
-            events_added_count += 1
             # Process the final block
             start_dt_obj_utc = datetime.datetime.strptime(current_block[0]['datetime'], '%Y-%m-%d %H:%M:%S')
             # The block ends after the last entry + the typical interval
             end_dt_obj_utc = datetime.datetime.strptime(current_block[-1]['datetime'], '%Y-%m-%d %H:%M:%S') + interval
 
-            # Build the description (same logic as inside the loop)
-            description_lines = []
-            for block_entry in current_block:
-                 # Convert UTC time for description line
-                 block_entry_utc_naive = datetime.datetime.strptime(block_entry['datetime'], '%Y-%m-%d %H:%M:%S')
-                 block_entry_utc_aware = pytz.utc.localize(block_entry_utc_naive)
-                 block_entry_local = block_entry_utc_aware.astimezone(local_tz)
-
-                 desc_line = format_ical_description_line(
-                     block_entry_local, # Pass the local datetime object
-                     block_entry.get('wind_speed_kt', 0),
-                     block_entry.get('wind_gust_kt'),
-                     block_entry.get('wind_dir_deg')
-                 )
-                 description_lines.append(desc_line)
-
-
-            description = "\\n".join(description_lines)
-
-            # Generate UID
-            uid = f"{start_dt_obj_utc.strftime('%Y%m%dT%H%M%S')}-{latitude:.3f}-{longitude:.3f}@gustcalendar.local"
-
-            ical_content.append("BEGIN:VEVENT")
-            ical_content.append(f"UID:{uid}")
-            ical_content.append(f"DTSTAMP:{now_utc}")
-            ical_content.append(f"DTSTART:{start_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-            ical_content.append(f"DTEND:{end_dt_obj_utc.strftime('%Y%m%dT%H%M%SZ')}")
-            # Explicitly state UTC
-            ical_content.append(f"SUMMARY:Gusts > {int(gust_threshold_kt)} kt (UTC: {start_dt_obj_utc.strftime('%H:%M')} - {end_dt_obj_utc.strftime('%H:%M')})")
-            ical_content.append(f"LOCATION:{latitude:.3f},{longitude:.3f}")
-            ical_content.append(f"DESCRIPTION:{description}")
-            ical_content.append("END:VEVENT")
-
+            create_event_for_block(ical_content, current_block, start_dt_obj_utc, end_dt_obj_utc,
+                                  latitude, longitude, gust_threshold_kt, local_tz, now_utc)
+            events_added_count += 1
 
     if events_added_count == 0:
         print(f"No continuous blocks with wind gusts over {gust_threshold_kt} knots found.")
         print("An empty calendar file will be created.")
     else:
         print(f"Found {events_added_count} continuous blocks with gusts over {gust_threshold_kt} knots.")
-
 
     ical_content.append("END:VCALENDAR")
 
